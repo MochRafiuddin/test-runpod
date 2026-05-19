@@ -55,6 +55,7 @@ def handler(job):
             os.remove(temp_image_path)
             
         return {
+            "requests": job_input,
             "status": "success",
             "total_detected": len(detections),
             "detections": detections
