@@ -4,10 +4,14 @@ from ultralytics import YOLO
 import os
 import datetime
 
-# Me-load model YOLOv8 Nano yang sudah di-download saat build tadi
+# Me-load model custom milikmu yang sudah tertanam di image
 model = YOLO("model_chompchomp_new.pt")
 
 def handler(job):
+    # Tentukan nama file secara konsisten dengan ekstensi .jpg
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    temp_image_path = f"temp_input_{timestamp}.jpg"
+    
     try:
         # Mengambil input data dari request pengguna
         job_input = job.get('input', {})
@@ -16,13 +20,12 @@ def handler(job):
         if not image_url:
             return {"status": "error", "message": "Input 'image_url' tidak ditemukan."}
         
-        # 1. Download gambar sementara dari URL
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Ekstrak nama file asli (misal: "image1.jpg") dari URL
-        filename = os.path.basename(image_url.split('?')[0])
-        # Gabungkan timestamp dengan nama file untuk memastikan nama file unik
-        temp_image_path = f"temp_input_{timestamp}_{filename}"
-        response = requests.get(image_url, stream=True)
+        # 1. Download gambar sementara dari URL dengan menambahkan Headers Browser umum
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        response = requests.get(image_url, headers=headers, stream=True, timeout=15)
+        
         if response.status_code == 200:
             with open(temp_image_path, 'wb') as f:
                 for chunk in response.iter_content(1024):
@@ -50,7 +53,7 @@ def handler(job):
                     "box": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)]
                 })
         
-        # Hapus file temporary agar container tetap bersih
+        # Hapus file temporary setelah sukses agar container tetap bersih
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
             
@@ -62,6 +65,9 @@ def handler(job):
         }
         
     except Exception as e:
+        # Jika terjadi eror di tengah jalan (misal: gagal parsing), pastikan file temporary tetap dihapus
+        if os.path.exists(temp_image_path):
+            os.remove(temp_image_path)
         return {"status": "error", "message": str(e)}
 
 # Jalankan RunPod serverless worker
