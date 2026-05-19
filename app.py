@@ -3,9 +3,35 @@ import requests
 from ultralytics import YOLO
 import os
 import datetime
+import cv2
+import base64
 
 # Me-load model custom milikmu yang sudah tertanam di image
 model = YOLO("model_chompchomp_new.pt")
+
+def group_boxes_into_rows(boxes, threshold=100):
+    try:
+        rows = []
+        boxes.sort(key=lambda box: box['box'][1])  # Sort by the top-left y-coordinate
+
+        for box in boxes:
+            added_to_row = False
+            for row in rows:
+                if abs(box['box'][1] - row[0]['box'][1]) < threshold:
+                    row.append(box)
+                    added_to_row = True
+                    break
+            if not added_to_row:
+                rows.append([box])
+        
+        # Sort each row horizontally by the top-left x-coordinate
+        for row in rows:
+            row.sort(key=lambda box: box['box'][0])
+
+        return rows
+    except Exception as e:
+        print(f"Error in group_boxes_into_rows: {e}")
+        return []
 
 def handler(job):
     # Tentukan nama file secara konsisten dengan ekstensi .jpg
@@ -36,6 +62,9 @@ def handler(job):
         # 2. Jalankan deteksi objek dengan YOLO
         results = model(temp_image_path)
         
+        # Baca gambar menggunakan OpenCV untuk anotasi
+        img = cv2.imread(temp_image_path)
+        
         # 3. Parsing hasil deteksi
         detections = []
         for result in results:
@@ -47,6 +76,11 @@ def handler(job):
                 class_id = int(box.cls[0])
                 class_name = model.names[class_id]
                 
+                # Anotasi pada gambar
+                cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                label = f"{class_name} {confidence:.2f}"
+                cv2.putText(img, label, (int(x1), int(y1) + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                
                 detections.append({
                     "object": class_name,
                     "confidence": confidence,
@@ -57,11 +91,19 @@ def handler(job):
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
             
+        # Urutkan dan kelompokkan deteksi
+        grouped_detections = group_boxes_into_rows(detections)
+        
+        # Konversi gambar hasil anotasi ke base64
+        _, buffer = cv2.imencode('.jpg', img)
+        img_base64 = base64.b64encode(buffer).decode('utf-8')
+            
         return {
             "requests": job_input,
             "status": "success",
             "total_detected": len(detections),
-            "detections": detections
+            "detections_grouped": grouped_detections,
+            "image_base64": img_base64
         }
         
     except Exception as e:
